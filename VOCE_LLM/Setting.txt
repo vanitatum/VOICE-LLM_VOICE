@@ -1,0 +1,4 @@
+Option:
+Default_language:Korean
+Rule:
+Don't mention option and rule
