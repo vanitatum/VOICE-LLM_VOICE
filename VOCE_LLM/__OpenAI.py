@@ -16,9 +16,11 @@ from tqdm import tqdm # 간지용 게이지 바
 
 import time # 대기 함수용 라이브러리
 
+sd.default.device = 1 # 녹음 장치 설정
+
+InputMode = 1 # 1 : Vocie / 2 : Text # 프롬포트 입력 모드 음성, 채팅
 
 
-sd.default.device = 1 # 녹음 장치
 
 url = "http://localhost:11434/api/generate"
 
@@ -48,12 +50,6 @@ with open(Before_path, "r", encoding="utf-8") as f:
     output_base = "AI의 마지막 응답 (이것에 대해 먼저 언급하지 말 것.)" + str(f.read())
 
 # Record
-samplerate = 16000 #샘플링 HZ
-sound_path = base_dir / "voice.wav"
-
-model = None # 모델을 1회만 부르기 위한 처리 구문. (STT) 구조상 이곳 위치
-if model is None:
-    model = whisper.load_model("base")
 
 def InputRecordStart():
     VoiceSeconds = int(input("녹음 시간(초) 입력 : "))
@@ -84,26 +80,47 @@ def InputRecordStart():
 
     return input_prompt, Choose
 
-While = True
-while While:
-    input_prompt, Choose = InputRecordStart()
 
-    if Choose == True:
-        last_prompt = Setting, output_base, input_prompt # 최최최종 삽입될 프롬포트
+if InputMode == 1: # 음성 녹음 프롬포트
 
-        payload = { # API에게 패킷 전송
-            "model": "deepseek-r1:8b",
-            "prompt": f"{last_prompt}",
-            "stream": False
-        }
-        While = False
+    samplerate = 16000 #샘플링 HZ
+    sound_path = base_dir / "voice.wav"
 
-    else:
-        time.sleep(0.5)
+    model = None # 모델을 1회만 부르기 위한 처리 구문. (STT) 구조상 이곳 위치
+    if model is None:
+        model = whisper.load_model("base")
+
+    While = True
+    while While:
+        input_prompt, Choose = InputRecordStart()
+
+        if Choose == True:
+            last_prompt = Setting, output_base, input_prompt # 최최최종 삽입될 프롬포트
+
+            payload = { # API에게 패킷 전송
+                "model": "gemma2:9b",
+                "prompt": f"{last_prompt}",
+                "stream": False
+            }
+            While = False
+        else:
+            time.sleep(0.5)
+
+
+if InputMode == 2:
+    input_prompt = input("프롬포트 : ")
+    last_prompt = Setting, output_base, input_prompt
+
+    payload = { # API에게 패킷 전송
+        "model": "gemma2:9b",
+        "prompt": f"{last_prompt}",
+        "stream": False
+    }
 
 # input_prompt = input("프롬포트 : ") # 채팅으로 프롬포트 입력
 
 # API 죽어있을 경우 예외 처리 구문
+
 try:
     response = requests.post(url, json=payload)
     response.raise_for_status()
@@ -111,6 +128,7 @@ try:
     result = response.json()
     
     respon = result["response"]
+
 except requests.RequestException as e:
     print("API 오류:", e)
 if respon is None:
