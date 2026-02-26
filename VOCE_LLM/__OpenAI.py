@@ -1,23 +1,25 @@
-import json
 import os
-import requests
-from pathlib import Path #파일 경로 구하기
+from pathlib import Path # 파일 경로 구하기
 
-from datetime import datetime #리얼 타임 구하기
-
-import sounddevice as sd #음성 녹음
+from datetime import datetime # 리얼 타임 구하기
 
 import whisper # Speech To Text AI
-from scipy.io.wavfile import write #.wav 확장자 라이브러리
 
-import pyttsx3 #Text To Speech
-
-from tqdm import tqdm # 간지용 게이지 바
+import pyttsx3 # Text To Speech
 
 import time # 대기 함수용 라이브러리
 
+import AiPacket as AI # AI 패킷 주고받기용 함수
+
+import RecordToText as RTT # 음성 녹음 후 메시지로 받기.
+
+
 
 base_dir = Path(__file__).parent
+
+sound_path = base_dir / "voice.wav"
+
+
 Arrange_Log_path = base_dir / "ArrangeLog"
 
 if not os.path.exists(Arrange_Log_path): # 로그 파일 없을 경우
@@ -27,16 +29,11 @@ if not os.path.exists(Arrange_Log_path): # 로그 파일 없을 경우
     Arrange_Log_path = base_dir / "ArrangeLog"
 
 
-sd.default.device = 1 # 녹음 장치 설정
 
-InputMode = 2 # 1 : Vocie / 2 : Text # 프롬포트 입력 모드 음성, 채팅
 
-url = "http://localhost:11434/api/generate"
+InputMode = 1 # 1 : Vocie / 2 : Text # 프롬포트 입력 모드 음성, 채팅
 
 engine = pyttsx3.init() # TTs 음성 엔진
-
-AiModel = "gemma2:9b" # AI 엔진
-
 
 Log_path = base_dir / "Log"
 files = os.listdir(Log_path)
@@ -47,33 +44,9 @@ AfterFileLen = BeforeFileLen + 1
 Before_path = base_dir / "Log" / f"{BeforeFileLen}.txt"
 After_path = base_dir / "Log" / f"{AfterFileLen}.txt"
 
-Arrange_Log_Token = 5 # x번째 턴마다 최근 x개의 로그를 정리해 요약.
+Arrange_Log_Token = 3 # x번째 턴마다 최근 x개의 로그를 정리해 요약.
 
 Arrange_Log_Folder_len = len(os.listdir(Arrange_Log_path)) + 1 # 요약 로그 폴더 내 파일 갯수 구하기, 1 = 로그 없는 상태
-
-
-# AI 패킷 전송 함수, return : AI 응답
-def AiApi(prompt):
-    payload = { # AI API에 패킷 전송
-        "model": AiModel,
-        "prompt": f"{prompt}",
-        "stream": False
-    }
-
-    try: # AI 대답 패킷 응답
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-
-        result = response.json()
-    
-        respon = result["response"]
-
-        return respon
-
-    except requests.RequestException as e: # API 죽었을 경우 예외 처리
-        print("API 오류:", e)
-    if respon is None:
-        exit()
 
 # 로그 정리 로그 생성 함수
 def LogArrange(i): # x : 정리할 최근 로그의 갯수. i = 5 의 경우 최근 5개를 정리 후 저장
@@ -97,7 +70,7 @@ def LogArrange(i): # x : 정리할 최근 로그의 갯수. i = 5 의 경우 최
 
         i -= 1
 
-    AISTR = AiApi(f"해당 기록의 내용을 요약해줘.\n{TotalBefore_Log}") # 요약 내용
+    AISTR = AI.api(f"해당 기록의 내용을 요약해줘.\n{TotalBefore_Log}") # 요약 내용
     ArrangeLogFile_path = Arrange_Log_path  / f"{Arrange_Log_Folder_len}.txt" # 요약 로그 저장 위치
     
     with open(ArrangeLogFile_path, "w+", encoding="utf-8") as ArrangeLogFile:
@@ -133,67 +106,31 @@ else: # 요약 로그가 없을 경우 프롬포트만 전송.
         output_base = "AI의 마지막 응답 (이것에 대해 먼저 언급하지 말 것.)" + str(f.read())
 
 
-# Record
-def InputRecordStart():
-    VoiceSeconds = int(input("녹음 시간(초) 입력 : "))
-    if VoiceSeconds >= 1:
-        duration = VoiceSeconds # 녹음 시간(s)
-        print("녹음 시작")
-        recording = sd.rec(int(samplerate * duration), samplerate = samplerate, channels=1, dtype='int16')
-
-        tqdmTick = VoiceSeconds / 100 # 게이지 시간 계산.
-        for i in tqdm(range(100)):
-            time.sleep(tqdmTick)
-
-        sd.wait() # 녹화 종료 대기
-        print("녹음 끝")
-        write(fr"{sound_path}", samplerate, recording)
-    else:
-        exit()
-    # STT
-    stt_result = model.transcribe(fr"{sound_path}")
-    input_prompt = stt_result["text"]
-
-    Choose = input("해당 프롬포트가 맞습니까? \n프롬포트 : " + input_prompt + "\nTrue/False : ") #문자로 변환된 음성 출력 & 질문
-
-    if Choose == "True":
-        Choose = True
-    else:
-        Choose = False
-
-    return input_prompt, Choose
 
 
 if InputMode == 1: # 음성 녹음 프롬포트
-
-    samplerate = 16000 #샘플링 HZ
-    sound_path = base_dir / "voice.wav"
 
     model = None # 모델을 1회만 부르기 위한 처리 구문. (STT) 구조상 이곳 위치
     if model is None:
         model = whisper.load_model("base")
 
-    While = True
-    while While:
-        input_prompt, Choose = InputRecordStart()
+    CurrentLoop = True
+    while CurrentLoop == True:
+        input_prompt, Choose = RTT.RecordStart(sound_path, model)
 
         if Choose == True:
             last_prompt = f"{Setting} \n {output_base} \n {input_prompt}" # 최최최종 삽입될 프롬포트
 
-            respon = AiApi(last_prompt)
-            While = False
+            respon = AI.api(last_prompt)
+            CurrentLoop = False
         else:
             time.sleep(0.5)
 
 
-if InputMode == 2:
+if InputMode == 2: # 채팅 프롬포트
     input_prompt = input("프롬포트 : ")
     last_prompt = f"{Setting} \n {output_base} \n {input_prompt}"
-    respon = AiApi(last_prompt)
-
-
-
-
+    respon = AI.api(last_prompt)
 
 
 print("응답:", respon)
